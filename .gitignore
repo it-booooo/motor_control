@@ -1,0 +1,22 @@
+# 量測資料不進版控 —— 這些檔案很大（熱實驗一次 14 MB）而且會不斷產生
+data/*.csv
+data/analysis/
+
+# 但保留資料夾結構
+!data/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# 作業系統
+.DS_Store
+Thumbs.db
+
+# 編輯器
+.vscode/
+.idea/
+*.swp
