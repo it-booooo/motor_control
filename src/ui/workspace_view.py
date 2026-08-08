@@ -16,7 +16,7 @@ class WorkspaceView(QWidget):
         setup_tabs.addTab(hardware_panel, "硬體與安全")
         setup_tabs.addTab(experiment_panel, "實驗設定")
 
-        live_group = self._group("即時遙測", telemetry_panel)
+        live_group = self._group("即時監測", telemetry_panel)
         analysis_group = self._group("資料分析與模擬", analysis_panel)
         right = QSplitter(Qt.Orientation.Vertical)
         right.addWidget(live_group)

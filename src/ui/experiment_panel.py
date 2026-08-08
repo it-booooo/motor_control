@@ -2,19 +2,18 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QDoubleSpinBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QProgressBar,
     QPushButton,
-    QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from ..experiment_specs import EXPERIMENT_HELP, EXPERIMENT_LABELS
+from .spin_boxes import StepDoubleSpinBox, StepSpinBox
 
 
 class ExperimentPanel(QWidget):
@@ -82,7 +81,7 @@ class ExperimentPanel(QWidget):
 
     @staticmethod
     def _double(value, minimum=0.01, maximum=3600.0, suffix=" s", decimals=2):
-        widget = QDoubleSpinBox()
+        widget = StepDoubleSpinBox()
         widget.setRange(minimum, maximum)
         widget.setDecimals(decimals)
         widget.setValue(value)
@@ -91,7 +90,7 @@ class ExperimentPanel(QWidget):
 
     @staticmethod
     def _integer(value, minimum=1, maximum=1000):
-        widget = QSpinBox()
+        widget = StepSpinBox()
         widget.setRange(minimum, maximum)
         widget.setValue(value)
         return widget
@@ -159,9 +158,9 @@ class ExperimentPanel(QWidget):
     def _values(self, kind):
         result = {}
         for key, widget in self.inputs[kind].items():
-            if isinstance(widget, QSpinBox):
+            if isinstance(widget, StepSpinBox):
                 result[key] = widget.value()
-            elif isinstance(widget, QDoubleSpinBox):
+            elif isinstance(widget, StepDoubleSpinBox):
                 result[key] = widget.value()
             elif isinstance(widget, QComboBox):
                 result[key] = widget.currentText().strip()

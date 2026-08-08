@@ -22,12 +22,39 @@ QGroupBox::title {
     padding: 0 5px;
     color: #334155;
 }
-QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit {
+QLineEdit, QComboBox, QPlainTextEdit {
     background: #ffffff;
     border: 1px solid #cbd5e1;
     border-radius: 4px;
     padding: 4px 6px;
     selection-background-color: #bfdbfe;
+}
+QSpinBox, QDoubleSpinBox {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    padding: 4px 30px 4px 6px;
+    selection-background-color: #bfdbfe;
+}
+QToolButton#spinStepUp, QToolButton#spinStepDown {
+    background: #f8fafc;
+    border: 0;
+    border-left: 1px solid #cbd5e1;
+    padding: 0;
+}
+QToolButton#spinStepUp {
+    border-bottom: 1px solid #e2e8f0;
+    border-top-right-radius: 4px;
+}
+QToolButton#spinStepDown {
+    border-top: 1px solid #e2e8f0;
+    border-bottom-right-radius: 4px;
+}
+QToolButton#spinStepUp:hover, QToolButton#spinStepDown:hover {
+    background: #eef2f7;
+}
+QToolButton#spinStepUp:pressed, QToolButton#spinStepDown:pressed {
+    background: #dbeafe;
 }
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
     border: 1px solid #2563eb;

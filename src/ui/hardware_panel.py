@@ -3,16 +3,16 @@ from pathlib import Path
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QComboBox,
-    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLineEdit,
     QPushButton,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
+
+from .spin_boxes import StepDoubleSpinBox, StepSpinBox
 
 
 class HardwarePanel(QWidget):
@@ -73,7 +73,7 @@ class HardwarePanel(QWidget):
 
     @staticmethod
     def _int_spin(minimum, maximum, value):
-        widget = QSpinBox()
+        widget = StepSpinBox()
         widget.setRange(minimum, maximum)
         widget.setValue(value)
         widget.setGroupSeparatorShown(True)
@@ -81,7 +81,7 @@ class HardwarePanel(QWidget):
 
     @staticmethod
     def _double_spin(minimum, maximum, value, decimals, suffix):
-        widget = QDoubleSpinBox()
+        widget = StepDoubleSpinBox()
         widget.setRange(minimum, maximum)
         widget.setDecimals(decimals)
         widget.setValue(value)
