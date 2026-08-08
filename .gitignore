@@ -12,6 +12,12 @@ __pycache__/
 venv/
 .ipynb_checkpoints/
 
+# PyInstaller
+build/
+dist/
+*.spec
+*.exe
+
 # 作業系統
 .DS_Store
 Thumbs.db

@@ -12,6 +12,7 @@ analyze.py — 讀 CSV 出圖出數字
 """
 
 import os
+from pathlib import Path
 import sys
 
 import matplotlib
@@ -300,10 +301,12 @@ def analyze_thermal(df, stem):
 
 
 # ------------------------------------------------------------------
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("用法: python analyze.py data/xxx.csv"); sys.exit(1)
-    path = sys.argv[1]
+def analyze_file(path, output_dir=None):
+    """Analyze one recorder CSV and return the generated image paths."""
+    global OUT
+    path = str(path)
+    if output_dir is not None:
+        OUT = str(output_dir)
     os.makedirs(OUT, exist_ok=True)
     stem = os.path.splitext(os.path.basename(path))[0]
     df = load(path)
@@ -318,4 +321,11 @@ if __name__ == "__main__":
     elif "soak" in ph:
         analyze_thermal(df, stem)
     else:
-        print("認不出實驗類型，phase 欄含：", ph)
+        raise ValueError(f"認不出實驗類型，phase 欄含：{ph}")
+    return sorted(Path(OUT).glob(f"{stem}_*.png"))
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("用法: python analyze.py data/xxx.csv"); sys.exit(1)
+    analyze_file(sys.argv[1])

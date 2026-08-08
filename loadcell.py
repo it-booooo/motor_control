@@ -34,8 +34,10 @@ class ForceSample:
 
 
 class LoadCell:
-    def __init__(self, port=LOADCELL_PORT, baud=LOADCELL_BAUD):
+    def __init__(self, port=LOADCELL_PORT, baud=LOADCELL_BAUD,
+                 sign=LOADCELL_SIGN):
         self.port, self.baud = port, baud
+        self.sign = sign
         self.ser = None
         self.sample: ForceSample | None = None
         self._lock = threading.Lock()
@@ -83,7 +85,7 @@ class LoadCell:
                 t_mcu, raw, grams = int(parts[0]), int(parts[1]), float(parts[2])
             except ValueError:
                 continue
-            grams = (grams - self._zero_g) * LOADCELL_SIGN
+            grams = (grams - self._zero_g) * self.sign
             s = ForceSample(
                 t=time.perf_counter(), t_mcu_ms=t_mcu, raw=raw,
                 grams=grams, newton=grams / 1000.0 * G,
@@ -113,7 +115,9 @@ class LoadCell:
             time.sleep(0.005)
         if not vals:
             raise RuntimeError("tare 期間沒收到資料")
-        self._zero_g = sum(vals) / len(vals)
+        # vals 已套用方向符號；偏移量則必須保存在套用符號前的座標系。
+        # 否則 sign=-1 時，第二次之後的讀值會把皮重加回去。
+        self._zero_g = sum(vals) / len(vals) / self.sign
         noise = max(vals) - min(vals)
         print(f"[load cell] 歸零於 {self._zero_g:.2f} g，"
               f"雜訊峰對峰 {noise:.2f} g（{len(vals)} 筆）")

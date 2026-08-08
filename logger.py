@@ -44,10 +44,11 @@ COLUMNS = [
 
 
 class Recorder:
-    def __init__(self, name: str, lever_m: float = LEVER_ARM_M):
-        os.makedirs(LOG_DIR, exist_ok=True)
+    def __init__(self, name: str, lever_m: float = LEVER_ARM_M,
+                 log_dir: str = LOG_DIR):
+        os.makedirs(log_dir, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.path = os.path.join(LOG_DIR, f"{stamp}_{name}.csv")
+        self.path = os.path.join(log_dir, f"{stamp}_{name}.csv")
         self.f = open(self.path, "w", newline="")
         self.w = csv.DictWriter(self.f, fieldnames=COLUMNS)
         self.w.writeheader()

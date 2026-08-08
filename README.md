@@ -16,6 +16,62 @@
 - 五組實驗腳本：縮放常數驗證、Kt 校正、正反向不對稱、反驅阻力、熱衰減
 - 分析端自動分離線性區與飽和區、以指數擬合外推熱時間常數
 - **附內建模擬器：沒有硬體也能把整條分析流程跑通**
+- **PySide6 桌面 GUI：硬體設定、五組實驗、即時遙測、停止保護、模擬與分析整合在同一視窗**
+
+---
+
+## 桌面 GUI
+
+GUI 參考 `2026-NCB-summer-intern` 的分層方式。根目錄 `__main__.py` 是唯一的應用程式
+入口，負責建立 `QApplication`、套用樣式及顯示主視窗；`src/main_window.py` 只保留
+`MainWindow` 應用程式外殼。Composer 建立各功能面板，Controller 負責流程協調，耗時
+的硬體量測與資料分析則交由背景 Worker 執行。長時間熱實驗不會凍結介面，關閉視窗或
+按下紅色停止按鈕時會先把馬達切回 idle，再安全關閉 CSV。
+
+安裝後由唯一入口啟動：
+
+```bash
+pip install -r requirements.txt
+python __main__.py
+```
+
+GUI 包含：
+
+- 「硬體與安全」：CAN 介面／通道、bitrate、Motor ID、load cell 序列埠、力臂長度、
+  記錄頻率、資料目錄及扭力／電流／溫度安全上限。設定只套用到當次執行，不會偷偷改寫
+  `config.py`。
+- 「實驗設定」：縮放驗證、Kt、正反向、反驅及熱衰減的所有原始參數；縮放驗證會用
+  對話框引導 90° 手動轉軸與拆除力臂兩個步驟。
+- 「即時遙測」：位置、轉速、電流、溫度、load cell 力、指令與實測扭力；若已安裝
+  `pyqtgraph`，同時顯示即時曲線。
+- 「資料分析與模擬」：可產生四組 README 所述的假資料，也可選擇任一量測 CSV，執行
+  原有 `analyze.py` 並直接預覽輸出圖。量測完成後預設會自動分析。
+
+建議第一次操作順序：
+
+1. 在「硬體與安全」確認 Windows/Linux 對應的 CAN 與序列埠設定，先把安全扭力設為
+   **3 N·m**，按「測試 CAN 與 Load cell」。
+2. 依序勾選三項現場安全確認；這些勾選不會取代機械限位與實體 E-stop。
+3. 先執行「0. 縮放常數驗證」，確認位置與速度換算，再依 README 順序執行其餘實驗。
+4. 紅色「緊急停止 / Motor Idle」會立即清除扭力指令，並保留停止前已寫入的部分 CSV。
+
+> GUI 的停止按鈕屬於軟體保護。USB、作業系統或程式本身失效時仍可能無法動作，
+> 因此實體電源開關／E-stop 必須保持在伸手可及處。
+
+### 建立單一 Windows 執行檔
+
+與參考專案相同，根目錄的 `build.py` 會先檢查完整依賴與舊 EXE 是否被執行中的程序
+鎖定，再以根目錄 `__main__.py` 為唯一入口，使用 PyInstaller 進行 clean
+one-file/windowed 建置：
+
+```bash
+python build.py
+```
+
+成功後輸出為 `dist/MotorControl.exe`。打包版不需要旁邊放置 `analyze.py` 或
+`simulate.py`；兩者會包含在 EXE 中，分析圖會寫到所選 CSV 同層的 `analysis/`，
+模擬資料則寫到 EXE 同層的 `data/`。建置必須在 Windows 上執行，且執行中的舊版
+`MotorControl.exe` 必須先關閉。
 
 ---
 
@@ -31,6 +87,13 @@
 | `experiments.py` | 五組實驗腳本 | 改實驗參數（扭力上限、時長） |
 | `analyze.py` | 出圖出數字 | 之後想加新圖表時 |
 | `simulate.py` | 產生假資料，無硬體也能跑通全流程 | 不用改 |
+| `__main__.py` | 唯一 GUI 入口；建立 `QApplication`、套用樣式並顯示 `MainWindow` | 調整應用程式啟動流程時 |
+| `build.py` | 依賴檢查與 PyInstaller 單檔建置 | 調整打包內容時 |
+| `src/main_window.py` | `MainWindow` 外殼、選單與關閉時的安全收尾 | 調整主視窗或選單時 |
+| `src/application/` | Composer 建立並串接 Panel、Controller 與共用狀態 | 增減主要功能模組時 |
+| `src/ui/` | 硬體、實驗、遙測與分析面板 | 調整畫面時 |
+| `src/controllers/` | 量測／分析流程協調與安全關閉 | 增加工作流程時 |
+| `src/workers/` | 背景硬體量測、模擬與分析程序 | 增加實驗時 |
 
 分層的意義：**量測時一個數字都不要現場算，只記原始值。**
 事後發現換算錯了，重跑 `analyze.py` 就好。熱實驗跑一次 15 分鐘，你不會想重做。

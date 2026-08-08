@@ -145,9 +145,15 @@ def unpack_feedback(data: bytes, t: float) -> MotorState:
 # 所以送指令要有自己的固定頻率迴圈，跟你的實驗邏輯解耦。
 
 class AKMotor:
-    def __init__(self, motor_id: int = MOTOR_ID):
+    def __init__(self, motor_id: int = MOTOR_ID, *, interface: str = CAN_INTERFACE,
+                 channel: str = CAN_CHANNEL, bitrate: int = CAN_BITRATE,
+                 command_rate_hz: float = 200.0):
         self.motor_id = motor_id
         self.tx_id = (MIT_MODE_ID << 8) | motor_id   # 擴展幀 ID
+        self.interface = interface
+        self.channel = channel
+        self.bitrate = bitrate
+        self.command_rate_hz = command_rate_hz
         self.bus = None
 
         # 最新一筆回授（由接收執行緒更新，主執行緒讀）
@@ -163,7 +169,7 @@ class AKMotor:
     # -------- 連線 --------
     def open(self):
         self.bus = can.interface.Bus(
-            interface=CAN_INTERFACE, channel=CAN_CHANNEL, bitrate=CAN_BITRATE
+            interface=self.interface, channel=self.channel, bitrate=self.bitrate
         )
         self._running = True
         self._rx_thread = threading.Thread(target=self._rx_loop, daemon=True)
@@ -189,7 +195,7 @@ class AKMotor:
 
     # -------- 背景迴圈 --------
     def _tx_loop(self):
-        period = 1.0 / 200.0
+        period = 1.0 / self.command_rate_hz
         next_t = time.perf_counter()
         while self._running:
             msg = can.Message(arbitration_id=self.tx_id,
