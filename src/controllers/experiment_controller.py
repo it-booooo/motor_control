@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QMessageBox
 
@@ -8,23 +6,18 @@ from ..workers import ConnectionTestWorker, ExperimentWorker
 
 
 class ExperimentController(QObject):
-    measurement_completed = Signal(str, bool)
     running_changed = Signal(bool)
 
-    def __init__(self, *, parent, state, hardware_panel, experiment_panel,
-                 telemetry_panel, log_panel):
+    def __init__(self, *, parent, state, hardware_panel, experiment_panel, telemetry_panel):
         super().__init__(parent)
         self.parent_window = parent
         self.state = state
         self.hardware_panel = hardware_panel
         self.experiment_panel = experiment_panel
         self.telemetry_panel = telemetry_panel
-        self.log_panel = log_panel
         self.worker = None
         self.test_worker = None
-        self._auto_analyze = False
         self.background_busy_check = None
-
         experiment_panel.start_requested.connect(self.start)
         experiment_panel.stop_requested.connect(self.stop)
         hardware_panel.test_requested.connect(self.test_connections)
@@ -42,35 +35,29 @@ class ExperimentController(QObject):
 
     def _status(self, message):
         self.parent_window.statusBar().showMessage(message, 15000)
-        self.log_panel.append_log(f"[實驗] {message}")
 
-    def start(self, kind, params, auto_analyze):
+    def start(self, kind, params):
         if self.is_running():
             return
         if self.background_busy_check and self.background_busy_check():
-            QMessageBox.warning(self.parent_window, "背景處理進行中", "請等待分析或模擬完成後再開始硬體量測。")
+            QMessageBox.warning(self.parent_window, "裝置忙碌", "請先結束 Manual Control。")
             return
         try:
             hardware = self._hardware()
             validate_request(kind, params, hardware)
-            Path(hardware["log_dir"]).mkdir(parents=True, exist_ok=True)
         except Exception as exc:
-            QMessageBox.warning(self.parent_window, "無法開始實驗", str(exc))
+            QMessageBox.warning(self.parent_window, "設定錯誤", str(exc))
             return
-
         answer = QMessageBox.question(
             self.parent_window,
-            "最後安全確認",
-            "軟體停止不能取代實體 E-stop。\n\n"
-            "確認治具已鎖固、旋轉區域淨空，並開始實驗？",
+            "開始 Motor Feedback Check",
+            "請確認馬達固定妥當、活動範圍無障礙，且 Hardware E-Stop 可立即使用。\n"
+            "Software Stop 並不是 Hardware E-Stop。是否繼續？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
-
-        self._auto_analyze = auto_analyze
-        self.log_panel.clear_log()
         self.telemetry_panel.reset()
         self.worker = ExperimentWorker(kind, params, hardware, self)
         self.worker.status.connect(self._status)
@@ -86,9 +73,7 @@ class ExperimentController(QObject):
         if self.worker is None:
             return
         answer = QMessageBox.question(
-            self.parent_window,
-            title,
-            text,
+            self.parent_window, title, text,
             QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Abort,
             QMessageBox.StandardButton.Ok,
         )
@@ -99,21 +84,16 @@ class ExperimentController(QObject):
 
     def stop(self):
         if self.worker is not None and self.worker.isRunning():
-            self._status("正在停止：馬達已切回 idle，等待資料檔安全關閉…")
+            self._status("Software Stop requested; commanding Motor Idle.")
             self.worker.request_stop()
         if self.test_worker is not None and self.test_worker.isRunning():
             self.test_worker.request_stop()
 
-    def _experiment_completed(self, data_path, cancelled, message):
+    def _experiment_completed(self, ok, message):
         self._set_running(False)
         self._status(message)
-        if data_path:
-            self.state.last_data_path = data_path
-            self.measurement_completed.emit(data_path, self._auto_analyze and not cancelled)
-        if cancelled:
-            QMessageBox.warning(self.parent_window, "實驗已停止", message)
-        else:
-            QMessageBox.information(self.parent_window, "實驗完成", message)
+        dialog = QMessageBox.information if ok else QMessageBox.warning
+        dialog(self.parent_window, "Motor Feedback Check", message)
 
     def _worker_finished(self):
         worker = self.sender()
@@ -125,14 +105,16 @@ class ExperimentController(QObject):
         if self.is_running():
             return
         if self.background_busy_check and self.background_busy_check():
-            QMessageBox.warning(self.parent_window, "背景處理進行中", "請等待分析或模擬完成後再測試硬體。")
+            QMessageBox.warning(self.parent_window, "裝置忙碌", "請先結束 Manual Control。")
             return
         try:
             hardware = self._hardware()
+            validate_request("verify", {"velocity": 0.1, "duration_s": 0.5}, hardware)
         except Exception as exc:
             QMessageBox.warning(self.parent_window, "設定錯誤", str(exc))
             return
         self._set_running(True)
+        self.hardware_panel.set_connection_status("測試中…")
         self.test_worker = ConnectionTestWorker(hardware, self)
         self.test_worker.status.connect(self._status)
         self.test_worker.completed.connect(self._test_completed)
@@ -141,9 +123,10 @@ class ExperimentController(QObject):
 
     def _test_completed(self, ok, message):
         self._set_running(False)
+        self.hardware_panel.set_connection_status("連線正常" if ok else "連線失敗", ok)
         self._status(message)
         dialog = QMessageBox.information if ok else QMessageBox.warning
-        dialog(self.parent_window, "硬體連線測試", message)
+        dialog(self.parent_window, "Motor Backend 測試", message)
 
     def _test_finished(self):
         worker = self.sender()
@@ -152,15 +135,13 @@ class ExperimentController(QObject):
         worker.deleteLater()
 
     def is_running(self):
-        return bool(
-            (self.worker is not None and self.worker.isRunning())
-            or (self.test_worker is not None and self.test_worker.isRunning())
-        )
+        return bool((self.worker and self.worker.isRunning()) or
+                    (self.test_worker and self.test_worker.isRunning()))
 
     def stop_and_wait(self, timeout_ms=4000):
         self.stop()
-        workers = [worker for worker in (self.worker, self.test_worker) if worker is not None]
-        return all(not worker.isRunning() or worker.wait(timeout_ms) for worker in workers)
+        workers = [w for w in (self.worker, self.test_worker) if w is not None]
+        return all(not w.isRunning() or w.wait(timeout_ms) for w in workers)
 
     def set_background_busy_check(self, callback):
         self.background_busy_check = callback

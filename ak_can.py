@@ -1,19 +1,32 @@
 """
-ak_can.py — CubeMars AK10-9 V3.0 的 CAN 通訊層
+ak_can.py — CubeMars AK10-9 V3.0 的 legacy Direct CAN（Debug）實作
 
-這一層只做一件事：把「人看得懂的物理量」和「馬達看得懂的 8 個位元組」互相翻譯。
-不含任何實驗邏輯，這樣之後換馬達型號只要改這一支。
+這個檔案保留 python-can TX/RX 與既有 AK10-9 feedback 相容性。正式實驗路徑使用
+MotorBackend → STM32MotorBackend；共用的 MIT Control Mode payload codec 位於
+src/motors/mit_codec.py。此 legacy class 不可直接套用到其他 motor profile。
 
-協議來源：AK Series Module Product Manual v3.0.0，第 4.2 節（發送）與 4.3 節（回授）
+CAN frame 格式來源：AK Series Module Product Manual v3.0.0，
+第 4.2 節（發送）與 4.3 節（回授）。MIT 是控制模式，不是通訊協定。
 """
 
 import math
 import struct
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
-import can
+try:
+    import can
+except ImportError:  # Simulation/model tests do not require python-can.
+    can = None
+
+from src.models import CanStatistics
+from src.motors.mit_codec import (
+    encode_mit_command,
+    float_to_uint as _float_to_uint,
+    uint_to_float as _uint_to_float,
+)
+from src.motors.profiles import AK10_9_V3_KV60
 
 from config import (
     CAN_BITRATE, CAN_CHANNEL, CAN_INTERFACE, GEAR_RATIO, KD_MAX, KD_MIN,
@@ -25,23 +38,19 @@ from config import (
 # ------------------------------------------------------------------
 # 第一部分：定點數轉換
 # ------------------------------------------------------------------
-# MIT 模式為了把 5 個浮點數塞進 8 bytes，把每個數字線性映射到固定位元寬的整數。
+# MIT Control Mode 為了把 5 個浮點數塞進 8 bytes，把每個數字線性映射到固定位元寬的整數。
 # 例如扭力用 12 bits：把 [-65, +65] 這個區間切成 4096 格。
 # 所以扭力解析度 = 130/4096 ≈ 0.032 N·m —— 這就是你指令的最小刻度，
 # 做 Kt 校正掃描時的步階不要小於這個值，不然你只是在送重複的指令。
 
 def float_to_uint(x: float, x_min: float, x_max: float, bits: int) -> int:
     """浮點 → 無號整數。對應手冊的 float_to_uint()。"""
-    span = x_max - x_min
-    x = min(max(x, x_min), x_min + span)
-    # 用 (2**bits - 1) 而非手冊的 (1<<bits)，避免 x=x_max 時溢位多一格
-    return int(round((x - x_min) * ((2 ** bits - 1) / span)))
+    return _float_to_uint(x, x_min, x_max, bits)
 
 
 def uint_to_float(x_int: int, x_min: float, x_max: float, bits: int) -> float:
     """無號整數 → 浮點。回授解碼用。"""
-    span = x_max - x_min
-    return x_int * span / (2 ** bits - 1) + x_min
+    return _uint_to_float(x_int, x_min, x_max, bits)
 
 
 # ------------------------------------------------------------------
@@ -65,22 +74,14 @@ def pack_mit_command(p_des: float, v_des: float,
     → 想做「純扭力控制」（Kt 校正實驗要的），就令 kp=kd=0，只給 t_ff
     → 想做「純速度控制」（無載轉速實驗要的），就令 kp=0，給 kd 和 v_des
     """
-    p_int = float_to_uint(p_des, P_MIN, P_MAX, 16)
-    v_int = float_to_uint(v_des, V_MIN, V_MAX, 12)
-    kp_int = float_to_uint(kp, KP_MIN, KP_MAX, 12)
-    kd_int = float_to_uint(kd, KD_MIN, KD_MAX, 12)
-    t_int = float_to_uint(t_ff, T_MIN, T_MAX, 12)
-
-    return bytes([
-        (kp_int >> 4) & 0xFF,                        # [0] KP 高 8 位
-        ((kp_int & 0x0F) << 4) | ((kd_int >> 8) & 0x0F),  # [1] KP 低4 + KD 高4
-        kd_int & 0xFF,                               # [2] KD 低 8 位
-        (p_int >> 8) & 0xFF,                         # [3] 位置高 8 位
-        p_int & 0xFF,                                # [4] 位置低 8 位
-        (v_int >> 4) & 0xFF,                         # [5] 速度高 8 位
-        ((v_int & 0x0F) << 4) | ((t_int >> 8) & 0x0F),    # [6] 速度低4 + 扭力高4
-        t_int & 0xFF,                                # [7] 扭力低 8 位
-    ])
+    return encode_mit_command(
+        p_des,
+        v_des,
+        kp,
+        kd,
+        t_ff,
+        profile=AK10_9_V3_KV60,
+    )
 
 
 # ------------------------------------------------------------------
@@ -90,7 +91,7 @@ def pack_mit_command(p_des: float, v_des: float,
 #
 # 1. 馬達回傳的是「電流」不是「扭力」。
 #    你在上位機看到的扭力是它拿標稱 Kt 乘出來的估計值，不是量測值。
-#    這正是你要用 load cell 去校正的東西 —— 也是你研究的第一個交付物。
+#    實機使用前必須確認命令與馬達回授的方向及尺度。
 #
 # 2. 回傳的速度是「電氣轉速 (eRPM)」，不是輸出軸轉速。
 #    機械轉速 = eRPM / 極對數 / 減速比
@@ -140,7 +141,7 @@ def unpack_feedback(data: bytes, t: float) -> MotorState:
 # 第四部分：馬達物件
 # ------------------------------------------------------------------
 # 設計重點：收發要分開在不同執行緒。
-# 原因是 MIT 模式的馬達會「保持最後一筆指令直到收到新的」，
+# 原因是 MIT Control Mode 的馬達會「保持最後一筆指令直到收到新的」，
 # 如果你的主程式因為寫檔案卡住 0.5 秒沒送指令，馬達會繼續用舊指令全力輸出。
 # 所以送指令要有自己的固定頻率迴圈，跟你的實驗邏輯解耦。
 
@@ -165,9 +166,20 @@ class AKMotor:
         self._running = False
         self._rx_thread = None
         self._tx_thread = None
+        self._can_statistics = CanStatistics(
+            can_tx_count=0,
+            can_rx_count=0,
+            can_tx_error=0,
+            can_rx_error=0,
+            rx_timeout_count=0,
+            filtered_frame_count=0,
+            bus_off_count=0,
+        )
 
     # -------- 連線 --------
     def open(self):
+        if can is None:
+            raise RuntimeError("python-can is required for Direct CAN backend")
         self.bus = can.interface.Bus(
             interface=self.interface, channel=self.channel, bitrate=self.bitrate
         )
@@ -203,18 +215,28 @@ class AKMotor:
                               is_extended_id=True)
             try:
                 self.bus.send(msg)
-            except can.CanError:
-                pass
+                self._can_statistics.can_tx_count += 1
+            except can.CanError as exc:
+                self._can_statistics.can_tx_error += 1
+                self._can_statistics.last_error = str(exc)
             next_t += period
             time.sleep(max(0.0, next_t - time.perf_counter()))
 
     def _rx_loop(self):
         while self._running:
-            msg = self.bus.recv(timeout=0.1)
+            try:
+                msg = self.bus.recv(timeout=0.1)
+            except can.CanError as exc:
+                self._can_statistics.can_rx_error += 1
+                self._can_statistics.last_error = str(exc)
+                continue
             if msg is None:
+                self._can_statistics.rx_timeout_count += 1
                 continue
             if len(msg.data) < 8:
+                self._can_statistics.filtered_frame_count += 1
                 continue
+            self._can_statistics.can_rx_count += 1
             st = unpack_feedback(msg.data, time.perf_counter())
             with self._lock:
                 self.state = st
@@ -224,11 +246,11 @@ class AKMotor:
         self._cmd = pack_mit_command(p_des, v_des, kp, kd, t_ff)
 
     def torque(self, t_ff: float):
-        """純扭力模式：kp=kd=0"""
+        """MIT Control Mode torque preset：kp=kd=0，只使用 feedforward。"""
         self.set_command(0, 0, 0, 0, t_ff)
 
     def velocity(self, v_rads: float, kd: float = 2.0):
-        """純速度模式：kp=0"""
+        """MIT Control Mode velocity preset：kp=0；不是 native Velocity Mode。"""
         self.set_command(0, v_rads, 0, kd, 0)
 
     def idle(self):
@@ -238,6 +260,11 @@ class AKMotor:
     def read(self) -> MotorState | None:
         with self._lock:
             return self.state
+
+    def get_can_statistics(self) -> CanStatistics:
+        """Direct-CAN counters measured by python-can, not STM32 counters."""
+
+        return replace(self._can_statistics)
 
 
 # ------------------------------------------------------------------

@@ -1,4 +1,8 @@
 from .experiment_worker import ConnectionTestWorker, ExperimentWorker
-from .process_worker import ProcessWorker
+from .manual_control_worker import ManualControlWorker
 
-__all__ = ["ConnectionTestWorker", "ExperimentWorker", "ProcessWorker"]
+__all__ = [
+    "ConnectionTestWorker",
+    "ExperimentWorker",
+    "ManualControlWorker",
+]

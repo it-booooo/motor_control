@@ -1,45 +1,24 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QGroupBox,
-    QSplitter,
-    QTabWidget,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QGroupBox, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
 
 class WorkspaceView(QWidget):
-    def __init__(self, hardware_panel, experiment_panel, telemetry_panel,
-                 analysis_panel, parent=None):
+    def __init__(self, hardware_panel, experiment_panel, manual_control_panel,
+                 telemetry_panel, parent=None):
         super().__init__(parent)
-        setup_tabs = QTabWidget()
-        setup_tabs.addTab(hardware_panel, "硬體與安全")
-        setup_tabs.addTab(experiment_panel, "實驗設定")
-
-        live_group = self._group("即時監測", telemetry_panel)
-        analysis_group = self._group("資料分析與模擬", analysis_panel)
-        right = QSplitter(Qt.Orientation.Vertical)
-        right.addWidget(live_group)
-        right.addWidget(analysis_group)
-        right.setChildrenCollapsible(False)
-        right.setSizes([390, 360])
-
+        tabs = QTabWidget()
+        tabs.addTab(hardware_panel, "Motor 通訊")
+        tabs.addTab(experiment_panel, "Feedback Check")
+        tabs.addTab(manual_control_panel, "Manual Control")
+        live_group = QGroupBox("Motor Telemetry")
+        live_layout = QVBoxLayout(live_group)
+        live_layout.addWidget(telemetry_panel)
         main = QSplitter(Qt.Orientation.Horizontal)
-        main.addWidget(setup_tabs)
-        main.addWidget(right)
+        main.addWidget(tabs)
+        main.addWidget(live_group)
         main.setChildrenCollapsible(False)
-        main.setStretchFactor(0, 0)
         main.setStretchFactor(1, 1)
-        main.setSizes([390, 990])
-
+        main.setSizes([400, 1000])
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
         layout.addWidget(main)
-
-    @staticmethod
-    def _group(title, widget):
-        group = QGroupBox(title)
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(5, 7, 5, 5)
-        layout.addWidget(widget)
-        return group

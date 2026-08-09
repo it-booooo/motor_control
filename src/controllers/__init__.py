@@ -1,4 +1,4 @@
-from .analysis_controller import AnalysisController
 from .experiment_controller import ExperimentController
+from .manual_control_controller import ManualControlController
 
-__all__ = ["AnalysisController", "ExperimentController"]
+__all__ = ["ExperimentController", "ManualControlController"]

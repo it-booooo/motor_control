@@ -1,28 +1,22 @@
 from dataclasses import dataclass
 
-from ..controllers import AnalysisController, ExperimentController
-from ..ui import (
-    AnalysisPanel,
-    ExperimentPanel,
-    HardwarePanel,
-    TelemetryPanel,
-    WorkspaceView,
-)
+from ..controllers import ExperimentController, ManualControlController
+from ..ui import ExperimentPanel, HardwarePanel, ManualControlPanel, TelemetryPanel, WorkspaceView
 
 
 @dataclass
 class ApplicationComponents:
     hardware_panel: HardwarePanel
     experiment_panel: ExperimentPanel
+    manual_control_panel: ManualControlPanel
     telemetry_panel: TelemetryPanel
-    analysis_panel: AnalysisPanel
     workspace: WorkspaceView
     experiment_controller: ExperimentController
-    analysis_controller: AnalysisController
+    manual_control_controller: ManualControlController
 
 
 class ApplicationComposer:
-    """Construct and wire the application's panels, workers, and controllers."""
+    """Construct and wire the motor communication application."""
 
     def __init__(self, window, state):
         self.window = window
@@ -31,47 +25,26 @@ class ApplicationComposer:
     def compose(self):
         hardware_panel = HardwarePanel(self.state.hardware)
         experiment_panel = ExperimentPanel(self.state.hardware.safe_torque_max)
+        manual_control_panel = ManualControlPanel()
         telemetry_panel = TelemetryPanel()
-        analysis_panel = AnalysisPanel()
-        workspace = WorkspaceView(
-            hardware_panel,
-            experiment_panel,
-            telemetry_panel,
-            analysis_panel,
-        )
-        analysis_controller = AnalysisController(parent=self.window, panel=analysis_panel)
+        workspace = WorkspaceView(hardware_panel, experiment_panel, manual_control_panel, telemetry_panel)
         experiment_controller = ExperimentController(
-            parent=self.window,
-            state=self.state,
-            hardware_panel=hardware_panel,
-            experiment_panel=experiment_panel,
-            telemetry_panel=telemetry_panel,
-            log_panel=analysis_panel,
+            parent=self.window, state=self.state, hardware_panel=hardware_panel,
+            experiment_panel=experiment_panel, telemetry_panel=telemetry_panel,
         )
-        analysis_controller.set_measurement_busy_check(experiment_controller.is_running)
-        experiment_controller.set_background_busy_check(analysis_controller.is_running)
+        manual_control_controller = ManualControlController(
+            parent=self.window, state=self.state, hardware_panel=hardware_panel,
+            manual_panel=manual_control_panel, telemetry_panel=telemetry_panel,
+        )
+        experiment_controller.set_background_busy_check(manual_control_controller.is_running)
+        manual_control_controller.set_busy_check(experiment_controller.is_running)
         experiment_controller.running_changed.connect(
-            lambda running: analysis_panel.setEnabled(not running)
+            lambda running: manual_control_panel.setEnabled(not running)
         )
-        analysis_controller.running_changed.connect(
-            lambda running: hardware_panel.setEnabled(not running)
-        )
-        analysis_controller.running_changed.connect(
+        manual_control_controller.running_changed.connect(
             lambda running: experiment_panel.setEnabled(not running)
         )
-
-        def handle_measurement(path, auto_analyze):
-            analysis_panel.set_file(path)
-            if auto_analyze:
-                analysis_controller.analyze(path)
-
-        experiment_controller.measurement_completed.connect(handle_measurement)
         return ApplicationComponents(
-            hardware_panel=hardware_panel,
-            experiment_panel=experiment_panel,
-            telemetry_panel=telemetry_panel,
-            analysis_panel=analysis_panel,
-            workspace=workspace,
-            experiment_controller=experiment_controller,
-            analysis_controller=analysis_controller,
+            hardware_panel, experiment_panel, manual_control_panel, telemetry_panel, workspace,
+            experiment_controller, manual_control_controller,
         )

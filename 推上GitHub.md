@@ -45,12 +45,12 @@ ls
 
 ```bash
 rm -rf .git __pycache__
-rm -rf data/*.csv data/analysis      # 模擬資料不用進版控，之後 simulate.py 可重生
+rm -rf data/*.csv                    # 暫存資料不用進版控
 
 git init -b main
 git add -A
 git status --short                    # ★ 檢查一下：不該有任何 .csv
-git commit -m "AK10-9 V3.0 馬達特性化測試台：CAN 通訊、load cell 擷取、五組實驗、分析與模擬"
+git commit -m "Motor communication console: STM32/CAN command and feedback"
 ```
 
 `git status --short` 那行如果看到 `.csv` 檔，代表 `.gitignore` 沒生效，先停下來別 commit。
