@@ -13,7 +13,6 @@ def main():
     """Create the Qt application and show the main window."""
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("AK10-9 Motor Control")
-    app.setOrganizationName("NCB")
     app.setStyleSheet(APP_STYLE)
     window = MainWindow()
     window.show()
