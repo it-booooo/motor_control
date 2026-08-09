@@ -9,6 +9,7 @@ from .packets import PacketStreamDecoder, encode_packet
 
 
 class STM32Transport(ABC):
+    """Application-packet transport between Python and STM32, never CAN itself."""
     @abstractmethod
     def open(self) -> None:
         raise NotImplementedError
@@ -29,7 +30,11 @@ class STM32Transport(ABC):
 
 
 class SerialSTM32Transport(STM32Transport):
-    """USB CDC/UART/VCP implementation; upper layers depend only on STM32Transport."""
+    """USB CDC/UART/VCP transport; upper layers depend only on STM32Transport.
+
+    The write lock prevents a heartbeat frame and an operator command from
+    interleaving on the serial byte stream.
+    """
 
     def __init__(self, port: str, baud: int, *, serial_factory=None):
         self.port = port
@@ -71,6 +76,11 @@ class SerialSTM32Transport(STM32Transport):
             self._serial.write(data)
 
     def read_packet(self, timeout: float | None = None):
+        """Return one decoded application packet before the monotonic deadline.
+
+        ``timeout`` is a host-side responsiveness bound, not a CAN latency
+        estimate.  STM32 firmware reports CAN timing separately in telemetry.
+        """
         if not self.is_open:
             raise RuntimeError("STM32 transport is not open")
         if self._packets:

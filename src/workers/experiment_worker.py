@@ -10,6 +10,10 @@ from ak_can import ERROR_TEXT
 from ..devices import create_motor_backend
 from ..motors import get_motor_profile
 
+# Maximum feedback age tolerated during an active experiment.  This is a
+# software safety timeout, not the expected CAN latency.
+FEEDBACK_TIMEOUT_S = 0.25
+
 
 class ExperimentCancelled(Exception):
     pass
@@ -66,6 +70,12 @@ class ConnectionTestWorker(QThread):
 
 
 class ExperimentWorker(QThread):
+    """Run blocking hardware validation away from Qt's GUI event loop.
+
+    The worker owns one temporary backend connection and experiment timing.  It
+    reports UI state through signals and always requests Motor Idle on exit;
+    realtime CAN control remains the responsibility of STM32 firmware.
+    """
     status = Signal(str)
     progress = Signal(int, str)
     telemetry = Signal(dict)
@@ -101,6 +111,7 @@ class ExperimentWorker(QThread):
         self._check_cancel()
 
     def _wait_feedback(self, timeout=3.0):
+        """Wait for initial telemetry while still honouring a Stop request."""
         deadline = time.perf_counter() + timeout
         while time.perf_counter() < deadline:
             self._check_cancel()
@@ -111,9 +122,14 @@ class ExperimentWorker(QThread):
         raise RuntimeError("Backend 已開啟，但沒有收到 motor telemetry")
 
     def _check_safety(self, state):
+        """Abort when feedback is stale or violates configured software limits.
+
+        The caller's ``finally`` block requests idle after this exception.  The
+        software limits complement, but cannot replace, the physical E-stop.
+        """
         if state is None:
             raise RuntimeError("Motor telemetry 中斷")
-        if time.perf_counter() - state.t > 0.25:
+        if time.perf_counter() - state.t > FEEDBACK_TIMEOUT_S:
             raise RuntimeError("Motor telemetry 已超過 250 ms 未更新")
         if state.error:
             raise RuntimeError(

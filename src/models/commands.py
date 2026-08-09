@@ -9,6 +9,11 @@ from ..motors.control_modes import ControlMode
 
 @dataclass(frozen=True)
 class SafetyLimits:
+    """Software limits supplied to the backend and STM32 watchdog policy.
+
+    These limits reduce sustained overload risk; they do not replace the
+    physical E-stop, fuse, fixture limits, or power cutoff.
+    """
     torque_nm: float
     current_a: float
     temperature_c: float
@@ -25,6 +30,11 @@ class SafetyLimits:
 
 @dataclass(frozen=True)
 class MotorCommand:
+    """Backend-neutral command expressed in output-shaft SI units.
+
+    The sequence and host timestamp are added at the backend boundary so a
+    command's identity reflects submission to transport, not UI interaction.
+    """
     sequence: int
     mode: ControlMode
     position_rad: float = 0.0
@@ -35,6 +45,7 @@ class MotorCommand:
     t_host_command_ns: int | None = None
 
     def stamped(self, sequence: int) -> "MotorCommand":
+        """Assign transport sequence and a monotonic host submission timestamp."""
         return replace(
             self,
             sequence=sequence,
@@ -58,7 +69,11 @@ class MotorCommand:
 
     @classmethod
     def torque_through_mit(cls, torque_nm: float) -> "MotorCommand":
-        """Torque feedforward through MIT Control Mode (kp=kd=0)."""
+        """Request torque through MIT Control Mode with ``kp = kd = 0``.
+
+        This is feed-forward torque inside an MIT command, not necessarily the
+        actuator's independent native Torque Control Mode.
+        """
 
         return cls(sequence=0, mode=ControlMode.MIT, torque_nm=torque_nm)
 

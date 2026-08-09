@@ -16,6 +16,8 @@ from ..motors import ControlMode
 MAGIC = b"\xA5\x5A"
 VERSION = 1
 MAX_PAYLOAD = 4096
+# Sentinel values keep optional fields fixed-width on the serial protocol;
+# Python ``None`` is restored only after packet integrity has been verified.
 UINT32_NONE = 0xFFFFFFFF
 UINT64_NONE = 0xFFFFFFFFFFFFFFFF
 
@@ -47,6 +49,11 @@ class Heartbeat:
 
 @dataclass(frozen=True)
 class BackendConfiguration:
+    """Safety and routing configuration consumed by STM32 before motor motion.
+
+    Timeouts are software watchdog bounds in milliseconds, not expected CAN
+    latency.  Firmware must use them to stop stale-command operation safely.
+    """
     sequence: int
     motor_id: int
     control_mode: ControlMode
@@ -148,6 +155,7 @@ def _payload(packet) -> tuple[PacketType, bytes]:
 
 
 def encode_packet(packet) -> bytes:
+    """Frame one application packet with length and CRC for a noisy byte stream."""
     packet_type, payload = _payload(packet)
     header = HEADER.pack(MAGIC, VERSION, packet_type, len(payload))
     checksum = zlib.crc32(header + payload) & 0xFFFFFFFF
@@ -155,6 +163,11 @@ def encode_packet(packet) -> bytes:
 
 
 def decode_packet(frame: bytes):
+    """Validate and decode one complete Python-to-STM32 application frame.
+
+    CRC is checked before fields are trusted, preventing corrupted serial data
+    from becoming a motor command or safety configuration.
+    """
     if len(frame) < HEADER.size + CRC.size:
         raise PacketError("STM32 packet is truncated")
     magic, version, raw_type, payload_length = HEADER.unpack_from(frame)
@@ -260,7 +273,11 @@ def _decode_payload(packet_type: PacketType, payload: bytes):
 
 
 class PacketStreamDecoder:
-    """Recover complete frames from an arbitrary byte stream."""
+    """Recover complete frames from arbitrary serial chunks.
+
+    On malformed input it discards the minimum prefix required to resynchronize,
+    preserving any following valid packet rather than flushing all telemetry.
+    """
 
     def __init__(self):
         self._buffer = bytearray()

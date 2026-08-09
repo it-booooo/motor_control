@@ -10,6 +10,12 @@ from .profiles import AK10_9_V3_KV60, MotorProfile
 
 
 def float_to_uint(value: float, minimum: float, maximum: float, bits: int) -> int:
+    """Quantize a physical command into its bounded unsigned CAN field.
+
+    Values outside the profile range are saturated because the MIT payload has
+    no representation for them.  Callers still validate safety separately:
+    saturation is a protocol limitation, not a safety decision.
+    """
     span = maximum - minimum
     value = min(max(value, minimum), maximum)
     return int(round((value - minimum) * ((2**bits - 1) / span)))
@@ -21,6 +27,11 @@ def uint_to_float(value: int, minimum: float, maximum: float, bits: int) -> floa
 
 @dataclass(frozen=True)
 class MITCommandFields:
+    """Decoded MIT Control Mode targets in output-shaft SI units.
+
+    Position is radians, velocity is rad/s, and torque is N*m.  These fields
+    describe an actuator CAN payload, not the USB/serial transport to STM32.
+    """
     position_rad: float
     velocity_rads: float
     kp: float
@@ -51,6 +62,22 @@ def encode_mit_command(
     *,
     profile: MotorProfile = AK10_9_V3_KV60,
 ) -> bytes:
+    """Encode one eight-byte actuator command for MIT Control Mode.
+
+    Args:
+        position_rad: Output-shaft position target [rad].
+        velocity_rads: Output-shaft velocity target [rad/s].
+        kp: Position gain in the profile's MIT range.
+        kd: Velocity gain in the profile's MIT range.
+        torque_nm: Feed-forward output torque [N*m].
+        profile: Profile that defines the payload's ranges and CAN identity.
+
+    Returns:
+        The CAN data field only; this function never transmits a CAN frame.
+
+    Raises:
+        ValueError: If the selected profile lacks verified MIT codec fields.
+    """
     p_min, p_max, v_min, v_max, t_min, t_max, kp_min, kp_max, kd_min, kd_max = _limits(profile)
     p_int = float_to_uint(position_rad, p_min, p_max, 16)
     v_int = float_to_uint(velocity_rads, v_min, v_max, 12)
@@ -74,6 +101,12 @@ def encode_mit_command(
 def decode_mit_command(
     data: bytes, *, profile: MotorProfile = AK10_9_V3_KV60
 ) -> MITCommandFields:
+    """Decode an eight-byte MIT payload into output-shaft SI targets.
+
+    This is intended for protocol tests and diagnostics; quantization means a
+    decoded value is the nearest representable command, not necessarily the
+    exact value originally requested.
+    """
     if len(data) != 8:
         raise ValueError("MIT Control Mode command must contain exactly 8 bytes")
     p_min, p_max, v_min, v_max, t_min, t_max, kp_min, kp_max, kd_min, kd_max = _limits(profile)

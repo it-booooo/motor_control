@@ -11,6 +11,13 @@ from .control_modes import CommunicationType, ControlMode
 
 @dataclass(frozen=True)
 class MotorProfile:
+    """Immutable actuator facts used to validate a selected hardware path.
+
+    This model owns profile-specific limits and CAN codec ranges; it does not
+    infer missing values from a similar motor.  ``None`` means the lab has not
+    verified the value from the exact actuator/firmware combination, so a real
+    backend must refuse any mode that depends on it.
+    """
     key: str
     display_name: str
     communication: CommunicationType
@@ -55,16 +62,16 @@ class MotorProfile:
                 )
 
 
-# Values below preserve the existing AK10-9 implementation.  The velocity,
-# torque and pole-pair values are still marked for physical verification in
-# config.py and README.md; they are not silently reused by other profiles.
+# ASSUMPTION: These values preserve the existing AK10-9 implementation.
+# Velocity, torque and pole-pair scaling still need physical verification; do
+# not reuse them for another actuator merely because its CAN payload is similar.
 AK10_9_V3_KV60 = MotorProfile(
     key="ak10-9-v3-kv60",
     display_name="AK10-9 V3.0 KV60",
     communication=CommunicationType.CAN,
     supported_control_modes=(ControlMode.MIT,),
-    gear_ratio=9.0,
-    pole_pairs=21,
+    gear_ratio=9.0,  # SPEC: nominal output-shaft gearbox ratio.
+    pole_pairs=21,  # TODO(AK10-9): verify against the installed firmware/manual.
     p_min=-12.56,
     p_max=12.56,
     v_min=-33.0,
@@ -87,8 +94,8 @@ AK10_9_V3_KV60 = MotorProfile(
 )
 
 
-# Only the identity is registered.  Official scaling, CAN-frame layout,
-# firmware behaviour and parameter ranges have not been supplied to this repo.
+# Only the identity is registered.  Official scaling, CAN-frame layout and
+# parameter ranges are unknown, so this profile deliberately cannot enable CAN.
 AK70_10_KV100 = MotorProfile(
     key="ak70-10-kv100",
     display_name="AK70-10 KV100",
@@ -116,6 +123,14 @@ MOTOR_PROFILES = {
 
 
 def get_motor_profile(key: str) -> MotorProfile:
+    """Return the named profile without guessing an actuator configuration.
+
+    Args:
+        key: Stable profile identifier stored in the application settings.
+
+    Raises:
+        KeyError: If no explicitly registered profile has this identifier.
+    """
     try:
         return MOTOR_PROFILES[key]
     except KeyError as exc:

@@ -14,6 +14,12 @@ class BackendType(str, Enum):
 
 
 class MotorBackend(ABC):
+    """Interface used by experiment workers, independent of physical wiring.
+
+    Implementations own connection lifecycle and conversion to normalized
+    telemetry.  They do not own UI state or realtime actuator scheduling; for
+    the STM32 backend, the latter belongs to firmware.
+    """
     communication = CommunicationType.CAN
     backend_type: BackendType
 
@@ -66,14 +72,18 @@ class MotorBackend(ABC):
         )
 
     def torque(self, torque_nm: float) -> None:
-        """Torque feedforward through MIT Control Mode (kp=0, kd=0)."""
+        """Request MIT feed-forward torque [N*m] with ``kp = kd = 0``.
+
+        This helper intentionally rejects non-MIT backends to avoid labelling a
+        protocol-specific command as an actuator-native torque control mode.
+        """
 
         if self.control_mode is not ControlMode.MIT:
             raise RuntimeError("Torque-through-MIT requires MIT Control Mode")
         self.command(MotorCommand.torque_through_mit(torque_nm))
 
     def velocity(self, velocity_rads: float, kd: float = 2.0) -> None:
-        """Velocity command through MIT Control Mode, not native Velocity Mode."""
+        """Request velocity [rad/s] through MIT Control Mode, not native mode."""
 
         if self.control_mode is not ControlMode.MIT:
             raise RuntimeError("Velocity-through-MIT requires MIT Control Mode")

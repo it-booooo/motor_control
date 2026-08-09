@@ -10,6 +10,11 @@ LATENCY_TIMESTAMPS_UNAVAILABLE = (
 
 @dataclass(frozen=True)
 class TimestampSet:
+    """Timing markers retained with their originating host or STM32 clock.
+
+    Host markers use ``perf_counter_ns`` [ns]; MCU/CAN markers use the STM32
+    monotonic timer [us].  The class does not synchronize those clock domains.
+    """
     t_host_command_ns: int | None = None
     t_host_rx_ns: int | None = None
     t_mcu_us: int | None = None
@@ -27,6 +32,11 @@ class TimestampSet:
             raise RuntimeError(LATENCY_TIMESTAMPS_UNAVAILABLE)
 
     def latency_breakdown_ms(self) -> "LatencyBreakdown":
+        """Return only latency intervals whose endpoints share the MCU clock.
+
+        Raises:
+            RuntimeError: If firmware did not expose all required MCU markers.
+        """
         self.require_mcu_latency_markers()
         return LatencyBreakdown(
             # Host and MCU clocks cannot be subtracted without synchronization.

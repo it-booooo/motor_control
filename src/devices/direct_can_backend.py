@@ -8,6 +8,11 @@ from .motor_backend import BackendType, MotorBackend
 
 
 class DirectCANMotorBackend(MotorBackend):
+    """Legacy direct-CAN route retained only for protocol debugging.
+
+    It bypasses STM32, so Windows/Python scheduling must not be treated as a
+    realtime control loop.  Validation experiments should use STM32 instead.
+    """
     backend_type = BackendType.DIRECT_CAN
 
     def __init__(

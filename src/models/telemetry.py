@@ -21,6 +21,12 @@ class CanStatistics:
 
 @dataclass(frozen=True)
 class MotorTelemetry:
+    """One telemetry sample normalized by a backend.
+
+    Position and velocity are output-shaft mechanical units: [rad] and
+    [rad/s].  ``timestamps`` retains the original clock domains instead of
+    pretending host and STM32 times can be directly compared.
+    """
     sequence: int
     timestamps: TimestampSet
     position_rad: float
@@ -33,7 +39,11 @@ class MotorTelemetry:
 
 @dataclass(frozen=True)
 class MotorStateSnapshot:
-    """Compatibility view consumed by the existing recorder/experiment code."""
+    """Compatibility view consumed by the existing recorder/experiment code.
+
+    ``spd_erpm`` is absent for normalized backend telemetry: ``spd_rads`` is
+    already output-shaft mechanical velocity, not electrical RPM.
+    """
 
     t: float
     pos_deg: float
@@ -48,6 +58,7 @@ class MotorStateSnapshot:
 
     @classmethod
     def from_telemetry(cls, telemetry: MotorTelemetry) -> "MotorStateSnapshot":
+        """Create the legacy view without mixing host and MCU clock domains."""
         host_ns = telemetry.timestamps.t_host_rx_ns
         t = host_ns / 1_000_000_000 if host_ns is not None else 0.0
         age_can = None
@@ -55,6 +66,7 @@ class MotorStateSnapshot:
             telemetry.timestamps.t_mcu_us is not None
             and telemetry.timestamps.t_can_rx_us is not None
         ):
+            # Both values are STM32 timestamps, so their difference is valid.
             age_can = max(
                 0.0,
                 (telemetry.timestamps.t_mcu_us - telemetry.timestamps.t_can_rx_us)

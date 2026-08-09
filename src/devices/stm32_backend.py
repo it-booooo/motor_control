@@ -10,6 +10,12 @@ from .motor_backend import BackendType, MotorBackend
 
 
 class STM32MotorBackend(MotorBackend):
+    """Laboratory backend that sends high-level packets to STM32 firmware.
+
+    Python owns USB/serial transport, latest-telemetry access and worker-facing
+    commands.  STM32 owns realtime CAN scheduling, electrical CAN interfacing,
+    MIT payload execution and sensor sampling timing.
+    """
     backend_type = BackendType.STM32
 
     def __init__(
@@ -40,6 +46,8 @@ class STM32MotorBackend(MotorBackend):
         self._running = False
         self._telemetry = None
         self._telemetry_lock = threading.Lock()
+        # RX and experiment threads access this reference concurrently.  Lock
+        # replacement/read so a consumer always receives one complete sample.
         self._send_lock = threading.Lock()
         self._rx_thread = None
         self._heartbeat_thread = None
@@ -51,10 +59,12 @@ class STM32MotorBackend(MotorBackend):
             return self._sequence
 
     def _send(self, packet) -> None:
+        """Serialize application-packet writes from commands and heartbeat."""
         with self._send_lock:
             self.transport.send_command(packet)
 
     def open(self) -> None:
+        """Configure STM32 then start non-GUI receive and watchdog threads."""
         if self._running:
             return
         self.safety.validate()
@@ -79,6 +89,7 @@ class STM32MotorBackend(MotorBackend):
         self._heartbeat_thread.start()
 
     def close(self) -> None:
+        """Request idle before closing transport; bounded joins avoid UI hangs."""
         if not self._running:
             self.transport.close()
             return
@@ -107,6 +118,7 @@ class STM32MotorBackend(MotorBackend):
         self.command(MotorCommand.idle(self.control_mode))
 
     def _rx_loop(self) -> None:
+        """Store the latest complete telemetry packet received by the RX thread."""
         while self._running:
             try:
                 packet = self.transport.read_packet(timeout=0.1)
@@ -119,6 +131,7 @@ class STM32MotorBackend(MotorBackend):
                     self._telemetry = packet
 
     def _heartbeat_loop(self) -> None:
+        """Keep STM32's host watchdog alive using a monotonic host timestamp."""
         period = 1.0 / max(self.heartbeat_hz, 0.1)
         while self._running:
             try:
@@ -136,6 +149,7 @@ class STM32MotorBackend(MotorBackend):
             time.sleep(period)
 
     def read_telemetry(self) -> MotorTelemetry | None:
+        """Return the latest complete sample, or ``None`` before first feedback."""
         with self._telemetry_lock:
             return self._telemetry
 
