@@ -75,6 +75,16 @@ AK10-9 目前使用的命令範圍為：
 - STM32 backend 需要可辨識的 serial/VCP port。
 - Direct CAN backend 需要已安裝並設定好的 CAN adapter driver。
 
+若要自行編譯或燒錄 STM32 韌體，另需安裝 STM32CubeIDE；使用 ST-LINK 時也要確認
+STM32CubeProgrammer 能辨識燒錄器。硬體需要 STM32 開發板、3.3 V 相容 CAN
+transceiver、120Ω 終端電阻與獨立的 Hardware E-Stop。
+
+本專案已提供 [`firmware/stm32/`](firmware/stm32/README.md) 通用韌體核心，包括
+protocol v1、CRC32、AK10-9 MIT CAN 編解碼、200 Hz 排程、telemetry 與 watchdog。
+由於尚未指定完整 STM32 型號，UART/USB、CAN/FDCAN、clock 與 pin mapping 不做危險的
+預設；選定板子後，只需依
+[`platform_port.h`](firmware/stm32/platform_port.h) 實作五個 HAL/USB CDC 硬體函式。
+
 ### 從原始碼執行
 
 在專案目錄執行：
